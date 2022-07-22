@@ -99,17 +99,23 @@ impl Inode {
         self.read_disk_inode(|disk_inode| {
             self.find_inode_id(name, disk_inode)
             .map(|inode_id| {
-                let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
-                Arc::new(Self::new(
-                    inode_id as usize,
-                    block_id,
-                    block_offset,
-                    self.fs.clone(),
-                    self.block_device.clone(),
-                ))
+                self.get_inode_by_id(inode_id, &fs)
             })
         })
     }
+
+    fn get_inode_by_id(&self, inode_id: u32, fs: &MutexGuard<EasyFileSystem>) -> Arc<Inode> {
+        let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
+        Arc::new(Self::new(
+            inode_id as usize,
+            block_id,
+            block_offset,
+            self.fs.clone(),
+            self.block_device.clone(),
+        ))
+    }
+
+
     /// Increase the size of a disk inode
     fn increase_size(
         &self,
@@ -194,8 +200,8 @@ impl Inode {
             }
 
              // has the src file been created?
-             if let Some(src_inode) = self.find(src_name) {
-                let src_inode_id = self.find_inode_id(src_name, root_inode).unwrap();
+             if let Some(src_inode_id) = self.find_inode_id(src_name, root_inode) {
+                let src_inode = self.get_inode_by_id(src_inode_id, &fs);
                 return Some((src_inode, src_inode_id))
              } else {
                 return None
@@ -246,8 +252,7 @@ impl Inode {
             } else {
                 return None
             };
-
-            let inode = self.find(name).unwrap();
+            let inode = self.get_inode_by_id(inode_id, &fs);
             return Some((inode, inode_id));
         });
 

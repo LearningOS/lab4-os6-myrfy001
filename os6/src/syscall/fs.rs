@@ -81,6 +81,7 @@ pub fn sys_close(fd: usize) -> isize {
 
 // YOUR JOB: 扩展 easy-fs 和内核以实现以下三个 syscall
 pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
+    let token = current_user_token();
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
@@ -90,13 +91,12 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
         return -1;
                 }
     if let Some(t) = inner.fd_table[fd].as_ref().unwrap().fstat() {
-        let token = current_user_token();
         *translated_refmut(token, st) = t;
         return 0
     } else {
         return -1
-            }
-            }
+    }
+}
 
 pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
     let token = current_user_token();
