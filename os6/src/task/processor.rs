@@ -6,9 +6,11 @@
 
 
 use super::__switch;
+use super::task::{TaskStatsInfo, TaskControlBlockInner};
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_us;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -55,6 +57,7 @@ pub fn run_tasks() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
             let mut task_inner = task.inner_exclusive_access();
+            let pid = task.pid.0;
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
             drop(task_inner);
@@ -62,9 +65,15 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
+            let ts = get_time_us();
+
+            // println!("will run-{}", pid);
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }
+            // println!("run {} for {}", pid, get_time_us()-ts);
+        } else {
+            println!("sche none");
         }
     }
 }
@@ -94,8 +103,32 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .get_trap_cx()
 }
 
+
+pub fn update_cur_task_syscall_cnt(syscall_id: usize) {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .stats.syscall_times[syscall_id] += 1;
+}
+
+pub fn get_cur_task_info() -> (TaskStatus, TaskStatsInfo) {
+    let t = current_task().unwrap();
+    let inner = t.inner_exclusive_access();
+
+    (inner.task_status, inner.stats)   
+}
+
+pub fn get_tcb_ref_mut<T, R>(mut f: T) -> R where T:FnMut(&mut TaskControlBlockInner) -> R {
+    let t = current_task().unwrap();
+    let mut inner = t.inner_exclusive_access();
+
+    f(&mut inner)
+}
+
+
 /// Return to idle control flow for new scheduling
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
+    // println!("sche called");
     let mut processor = PROCESSOR.exclusive_access();
     let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
     drop(processor);

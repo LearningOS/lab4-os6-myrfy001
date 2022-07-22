@@ -1,9 +1,11 @@
 //! Process management syscalls
+use crate::mm::{translated_refmut, translated_ref, translated_str, VirtAddr, MapPermission};
 
-use crate::mm::{translated_refmut, translated_ref, translated_str};
+use crate::config::{PAGE_SIZE, BIG_STRIDE};
+
 use crate::task::{
-    add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, TaskStatus,
+    add_task, current_task, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
+    get_cur_task_info, get_tcb_ref_mut
 };
 use crate::fs::{open_file, OpenFlags};
 use crate::timer::get_time_us;
@@ -111,38 +113,119 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 
 // YOUR JOB: 引入虚地址后重写 sys_get_time
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    let _us = get_time_us();
-    // unsafe {
-    //     *ts = TimeVal {
-    //         sec: us / 1_000_000,
-    //         usec: us % 1_000_000,
-    //     };
-    // }
+    let us = get_time_us();
+    let t = translated_refmut(current_user_token(), _ts);
+
+    t.sec = us / 1000000;
+    t.usec = us % 1000000;
+    
     0
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
-    -1
+    let (status, stats) = get_cur_task_info();
+    let t = translated_refmut(current_user_token(), ti);
+
+    // println!("addr:={}", t as *const TaskInfo as  usize);
+    // println!("size:={}", core::mem::size_of::<TaskInfo>());
+
+    *t = TaskInfo{
+        status,
+        syscall_times: stats.syscall_times.clone(),
+        time: (get_time_us() - stats.first_run_time) / 1000,
+    };
+    0
 }
 
 // YOUR JOB: 实现sys_set_priority，为任务添加优先级
-pub fn sys_set_priority(_prio: isize) -> isize {
-    -1
+pub fn sys_set_priority(prio: isize) -> isize {
+    // info!("set pri ------------");
+    if prio < 2 {
+        return -1;
+    }
+    let task = current_task().unwrap();
+    let mut t = BIG_STRIDE / (prio as u64);
+    
+    if t == 0 {
+        t = 1;
+    }
+    task.inner_exclusive_access().stride = t;
+
+    // println!("pid={} set pri = {}, stride= {}", task.pid.0, prio, t);
+
+    prio
 }
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    -1
+    if _start & (PAGE_SIZE-1) != 0 {
+        // 没有按照页对齐
+        return -1;
+    }
+
+    if _port & (!0x07) != 0 || (_port & 0x07) == 0 {
+        return -1;
+    } 
+
+    let start_va: VirtAddr = VirtAddr::from(_start).floor().into();
+    let end_va: VirtAddr = VirtAddr::from(_start + _len).ceil().into();
+
+
+    let mut permission = MapPermission::empty();
+    permission.set(MapPermission::U, true);
+
+    if _port & 0x01 != 0 {
+        permission.set(MapPermission::R, true);
+    }
+
+    if _port & 0x02 != 0 {
+        permission.set(MapPermission::W, true);
+    }
+
+    if _port & 0x04 != 0 {
+        permission.set(MapPermission::X, true);
+    }
+
+
+    if !get_tcb_ref_mut(|tcb| {
+        tcb.memory_set.mmap(start_va.into(), end_va.into(), permission)
+    })  {
+        return -1;
+    }
+    
+    0
 }
 
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    -1
+    if !get_tcb_ref_mut(|tcb| {
+        tcb.memory_set.munmap(_start.into(), _len.into())
+    })  {
+        return -1;
+    }
+    0
 }
 
 //
 // YOUR JOB: 实现 sys_spawn 系统调用
 // ALERT: 注意在实现 SPAWN 时不需要复制父进程地址空间，SPAWN != FORK + EXEC 
-pub fn sys_spawn(_path: *const u8) -> isize {
-    -1
+pub fn sys_spawn(path: *const u8) -> isize {
+
+    let token = current_user_token();
+    let path = translated_str(token, path);
+
+
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        let task = current_task().unwrap();
+        let new_task = task.spawn(&all_data);
+        let new_pid = new_task.pid.0;
+        let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+        trap_cx.x[10] = 0;
+        add_task(new_task);
+        // info!("spawn {}, pid={}", path, new_pid);
+        new_pid as isize
+    } else {
+        -1
+    }
 }

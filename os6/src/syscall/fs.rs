@@ -17,7 +17,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     let inner = task.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;
-    }
+            }
     if let Some(file) = &inner.fd_table[fd] {
         let file = file.clone();
         // release current task TCB manually to avoid multi-borrow
@@ -27,8 +27,8 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         ) as isize
     } else {
         -1
-    }
-}
+        }
+        }
 
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     let token = current_user_token();
@@ -61,7 +61,7 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
         let fd = inner.alloc_fd();
         inner.fd_table[fd] = Some(inode);
         fd as isize
-    } else {
+                } else {
         -1
     }
 }
@@ -88,15 +88,15 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     }
     if inner.fd_table[fd].is_none() {
         return -1;
-    }
+                }
     if let Some(t) = inner.fd_table[fd].as_ref().unwrap().fstat() {
         let token = current_user_token();
         *translated_refmut(token, st) = t;
         return 0
     } else {
         return -1
-    }
-}
+            }
+            }
 
 pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
     let token = current_user_token();

@@ -1,4 +1,4 @@
-//! Implementation of [`FrameAllocator`] which
+//! Implementation of [`FrameAllocator`] which 
 //! controls all the frames in the operating system.
 
 use super::{PhysAddr, PhysPageNum};
@@ -93,6 +93,7 @@ lazy_static! {
         unsafe { UPSafeCell::new(FrameAllocatorImpl::new()) };
 }
 
+/// initiate the frame allocator using `ekernel` and `MEMORY_END`
 pub fn init_frame_allocator() {
     extern "C" {
         fn ekernel();

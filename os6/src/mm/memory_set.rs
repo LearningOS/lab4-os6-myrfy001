@@ -268,6 +268,66 @@ impl MemorySet {
         //*self = Self::new_bare();
         self.areas.clear();
     }
+
+    pub fn mmap(&mut self, start_va: usize, end_va: usize, permission: MapPermission) -> bool {
+        if self.check_va_overlap(start_va, end_va) {
+            return false
+        }
+
+        self.insert_framed_area(start_va.into(), end_va.into(), permission);
+
+        true
+
+    }
+
+    pub fn munmap(&mut self, start_va: usize, len: usize) -> bool {
+        
+        let end_va = start_va + len;
+
+
+        if self.check_va_within(start_va, end_va) == false {
+            return false
+        }
+        
+        self.remove_area_with_start_vpn(VirtAddr::from(start_va).into());
+
+        true
+    }
+
+    fn check_va_overlap(&self, start_va: usize, end_va: usize) -> bool {
+        for area in &self.areas {
+            let s:VirtAddr = area.vpn_range.get_start().into();
+            let e: VirtAddr = area.vpn_range.get_end().into();
+
+            let ss: usize = s.into();
+            let ee: usize = e.into();
+
+            if (s < end_va.into() && s >= start_va.into()) || (e < end_va.into() && e > start_va.into()) {
+                // println!("==--==--{:x},{:x},{:x},{:x}", ss,ee,start_va, end_va);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn check_va_within(&self, start_va: usize, end_va: usize) -> bool {
+
+        for area in &self.areas {
+            let s:VirtAddr = area.vpn_range.get_start().into();
+            let e: VirtAddr = area.vpn_range.get_end().into();
+
+            // let ss: usize = s.into();
+            // let ee: usize = e.into();
+
+            // println!("----=== {:x},{:x},{:x},{:x}", ss,ee,start_va, end_va);
+            
+
+            if s == start_va.into() &&  e == end_va.into() {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// map area structure, controls a contiguous piece of virtual memory

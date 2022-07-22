@@ -9,6 +9,7 @@ use crate::sync::UPSafeCell;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use lazy_static::*;
+use crate::timer::get_time_us;
 
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
@@ -28,7 +29,22 @@ impl TaskManager {
     }
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        self.ready_queue.pop_front()
+
+
+        if let Some((idx, task_to_run)) = self.ready_queue.iter().enumerate().min_by_key(|t| t.1.inner_exclusive_access().stride_pass) {
+
+            let mut inner = task_to_run.inner_exclusive_access();
+            let t = inner.stride;
+
+            // println!("pid={} stride={} pass={}  total = {}", task_to_run.pid.0, t, inner.stride_pass.0, self.ready_queue.len());
+
+            inner.stride_pass.step(t);
+
+            drop(inner);
+            self.ready_queue.remove(idx)
+        } else {
+            None
+        }
     }
 }
 
