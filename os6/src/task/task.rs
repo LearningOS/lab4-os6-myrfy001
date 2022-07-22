@@ -307,7 +307,14 @@ impl TaskControlBlock {
                     exit_code: 0,
                     stride_pass: StridePass(0),
                     stride: BIG_STRIDE / DEFAULT_TASK_PRIORITY,
-                    fd_table: Vec::new(),
+                    fd_table: alloc::vec![
+                        // 0 -> stdin
+                        Some(Arc::new(Stdin)),
+                        // 1 -> stdout
+                        Some(Arc::new(Stdout)),
+                        // 2 -> stderr
+                        Some(Arc::new(Stdout)),
+                    ],
                 })
             },
         });
